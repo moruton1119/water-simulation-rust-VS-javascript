@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluid Simulator: JS vs Rust</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;400;600&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+    <div id="app">
+        <canvas id="fluid-canvas"></canvas>
+
+        <div id="ui-overlay">
+            <header>
+                <h1>FLUID SIMULATOR</h1>
+                <div class="stats">
+                    <div class="stat-item">
+                        <span class="label">FPS:</span>
+                        <span id="fps-counter" class="value">0</span>
+                    </div>
+                </div>
+            </header>
+
+            <main>
+                <div class="control-panel">
+                    <section class="engine-selection">
+                        <h2>COMPUTE ENGINE</h2>
+                        <div class="button-group">
+                            <button id="btn-js" class="active">JavaScript</button>
+                            <button id="btn-rust" disabled title="Phase 2 Implementation">Rust (Wasm)</button>
+                        </div>
+                    </section>
+
+                    <section class="brush-selection">
+                        <h2>BRUSH MODE</h2>
+                        <div class="button-group">
+                            <button id="btn-mode-water" class="active">Water</button>
+                            <button id="btn-mode-stone">Stone</button>
+                        </div>
+                    </section>
+
+                    <section class="simulation-params">
+                        <h2>PARAMETERS</h2>
+                        <div class="control-item">
+                            <label for="range-resolution">Resolution</label>
+                            <input type="range" id="range-resolution" min="64" max="256" step="64" value="128">
+                            <span id="val-resolution" class="val-display">128</span>
+                        </div>
+                        <div class="button-group" style="margin-top: 1rem;">
+                            <button id="btn-clear-fluid">Clear Fluid</button>
+                            <button id="btn-clear-obstacles">Clear Stones</button>
+                        </div>
+                    </section>
+                </div>
+            </main>
+
+            <footer>
+                <p>Drag to stir • Click to toggle obstacle</p>
+            </footer>
+        </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
