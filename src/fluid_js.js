@@ -17,19 +17,21 @@ class Fluid {
         this.Vx0 = new Float32Array(size * size);
         this.Vy0 = new Float32Array(size * size);
 
-        this.obstacles = new Uint8Array(size * size); // 1 = obstacle, 0 = fluid
+        this.obstacles = new Uint8Array(size * size);
     }
 
     step() {
-        let visc = this.visc;
-        let diff = this.diff;
-        let dt = this.dt;
-        let Vx = this.Vx;
-        let Vy = this.Vy;
-        let Vx0 = this.Vx0;
-        let Vy0 = this.Vy0;
-        let s = this.s;
-        let density = this.density;
+        const visc = this.visc;
+        const diff = this.diff;
+        const dt = this.dt;
+        const Vx = this.Vx;
+        const Vy = this.Vy;
+        const Vx0 = this.Vx0;
+        const Vy0 = this.Vy0;
+        const s = this.s;
+        const density = this.density;
+
+        this.addGravity();
 
         this.diffuse(1, Vx0, Vx, visc, dt);
         this.diffuse(2, Vy0, Vy, visc, dt);
@@ -44,17 +46,52 @@ class Fluid {
         this.diffuse(0, s, density, diff, dt);
         this.advect(0, density, s, Vx, Vy, dt);
 
-        this.applyObstacles();
+        this.handleObstacles();
     }
 
-    applyObstacles() {
-        for (let i = 0; i < this.size * this.size; i++) {
-            if (this.obstacles[i]) {
-                this.density[i] = 0;
-                this.Vx[i] = 0;
-                this.Vy[i] = 0;
-                this.Vx0[i] = 0;
-                this.Vy0[i] = 0;
+    addGravity() {
+        const N = this.size;
+        const gravity = 0.2;
+
+        for (let i = 0; i < N * N; i++) {
+            if (!this.obstacles[i] && this.density[i] > 0.01) {
+                this.Vy[i] += gravity * Math.min(this.density[i], 1);
+            }
+        }
+    }
+
+    handleObstacles() {
+        const N = this.size;
+
+        for (let j = 1; j < N - 1; j++) {
+            for (let i = 1; i < N - 1; i++) {
+                const idx = i + j * N;
+
+                if (this.obstacles[idx]) {
+                    this.density[idx] = 0;
+                    this.Vx[idx] = 0;
+                    this.Vy[idx] = 0;
+                    this.Vx0[idx] = 0;
+                    this.Vy0[idx] = 0;
+                    continue;
+                }
+
+                const hasLeft = this.obstacles[idx - 1];
+                const hasRight = this.obstacles[idx + 1];
+                const hasUp = this.obstacles[idx - N];
+                const hasDown = this.obstacles[idx + N];
+
+                if (hasDown && this.Vy[idx] > 0) {
+                    const spread = this.Vy[idx] * 0.5;
+                    this.Vy[idx] *= 0.1;
+
+                    if (!hasLeft) {
+                        this.Vx[idx - 1] += spread * 0.5;
+                    }
+                    if (!hasRight) {
+                        this.Vx[idx + 1] -= spread * 0.5;
+                    }
+                }
             }
         }
     }
@@ -65,92 +102,87 @@ class Fluid {
     }
 
     addDensity(x, y, amount) {
-        let index = x + y * this.size;
-        this.density[index] += amount;
+        const index = x + y * this.size;
+        if (index >= 0 && index < this.density.length && !this.obstacles[index]) {
+            this.density[index] += amount;
+        }
     }
 
     addVelocity(x, y, amountX, amountY) {
-        let index = x + y * this.size;
-        this.Vx[index] += amountX;
-        this.Vy[index] += amountY;
+        const index = x + y * this.size;
+        if (index >= 0 && index < this.Vx.length && !this.obstacles[index]) {
+            this.Vx[index] += amountX;
+            this.Vy[index] += amountY;
+        }
     }
 
     diffuse(b, x, x0, diff, dt) {
-        let a = dt * diff * (this.size - 2) * (this.size - 2);
+        const a = dt * diff * (this.size - 2) * (this.size - 2);
         this.lin_solve(b, x, x0, a, 1 + 6 * a);
     }
 
     lin_solve(b, x, x0, a, c) {
-        let cRecip = 1.0 / c;
-        for (let k = 0; k < 40; k++) {
-            for (let j = 1; j < this.size - 1; j++) {
-                for (let i = 1; i < this.size - 1; i++) {
-                    const idx = i + j * this.size;
+        const cRecip = 1.0 / c;
+        const N = this.size;
+
+        for (let k = 0; k < 20; k++) {
+            for (let j = 1; j < N - 1; j++) {
+                for (let i = 1; i < N - 1; i++) {
+                    const idx = i + j * N;
                     if (this.obstacles[idx]) continue;
 
-                    x[idx] =
-                        (x0[idx] +
-                            a *
-                            (x[idx + 1] +
-                                x[idx - 1] +
-                                x[idx + this.size] +
-                                x[idx - this.size])) *
-                        cRecip;
+                    x[idx] = (x0[idx] + a * (
+                        (this.obstacles[idx - 1] ? x[idx] : x[idx - 1]) +
+                        (this.obstacles[idx + 1] ? x[idx] : x[idx + 1]) +
+                        (this.obstacles[idx - N] ? x[idx] : x[idx - N]) +
+                        (this.obstacles[idx + N] ? x[idx] : x[idx + N])
+                    )) * cRecip;
                 }
             }
             this.set_bnd(b, x);
-            this.set_custom_bnd(b, x);
-        }
-    }
-
-    set_custom_bnd(b, x) {
-        const N = this.size;
-        for (let j = 1; j < N - 1; j++) {
-            for (let i = 1; i < N - 1; i++) {
-                const idx = i + j * N;
-                if (this.obstacles[idx]) {
-                    if (b === 1) {
-                        // Reflect X. If surrounded by stones, zero out.
-                        let left = this.obstacles[idx - 1] === 0 ? x[idx - 1] : 0;
-                        let right = this.obstacles[idx + 1] === 0 ? x[idx + 1] : 0;
-                        x[idx] = -0.5 * (left + right);
-                    } else if (b === 2) {
-                        // Reflect Y
-                        let up = this.obstacles[idx - N] === 0 ? x[idx - N] : 0;
-                        let down = this.obstacles[idx + N] === 0 ? x[idx + N] : 0;
-                        x[idx] = -0.5 * (up + down);
-                    } else {
-                        // Clear density inside stone
-                        x[idx] = 0;
-                    }
-                }
-            }
         }
     }
 
     project(velocX, velocY, p, div) {
-        for (let j = 1; j < this.size - 1; j++) {
-            for (let i = 1; i < this.size - 1; i++) {
-                div[i + j * this.size] =
-                    -0.5 *
-                    (velocX[i + 1 + j * this.size] -
-                        velocX[i - 1 + j * this.size] +
-                        velocY[i + (j + 1) * this.size] -
-                        velocY[i + (j - 1) * this.size]) /
-                    this.size;
-                p[i + j * this.size] = 0;
+        const N = this.size;
+
+        for (let j = 1; j < N - 1; j++) {
+            for (let i = 1; i < N - 1; i++) {
+                const idx = i + j * N;
+
+                if (this.obstacles[idx]) {
+                    div[idx] = 0;
+                    p[idx] = 0;
+                    continue;
+                }
+
+                div[idx] = -0.5 * (
+                    (this.obstacles[idx + 1] ? velocX[idx] : velocX[idx + 1]) -
+                    (this.obstacles[idx - 1] ? velocX[idx] : velocX[idx - 1]) +
+                    (this.obstacles[idx + N] ? velocY[idx] : velocY[idx + N]) -
+                    (this.obstacles[idx - N] ? velocY[idx] : velocY[idx - N])
+                ) / N;
+                p[idx] = 0;
             }
         }
         this.set_bnd(0, div);
         this.set_bnd(0, p);
-        this.lin_solve(0, p, div, 1, 6);
+        this.lin_solve(0, p, div, 1, 4);
 
-        for (let j = 1; j < this.size - 1; j++) {
-            for (let i = 1; i < this.size - 1; i++) {
-                velocX[i + j * this.size] -=
-                    0.5 * (p[i + 1 + j * this.size] - p[i - 1 + j * this.size]) * this.size;
-                velocY[i + j * this.size] -=
-                    0.5 * (p[i + (j + 1) * this.size] - p[i + (j - 1) * this.size]) * this.size;
+        for (let j = 1; j < N - 1; j++) {
+            for (let i = 1; i < N - 1; i++) {
+                const idx = i + j * N;
+
+                if (this.obstacles[idx]) continue;
+
+                velocX[idx] -= 0.5 * (
+                    (this.obstacles[idx + 1] ? p[idx] : p[idx + 1]) -
+                    (this.obstacles[idx - 1] ? p[idx] : p[idx - 1])
+                ) * N;
+                velocY[idx] -= 0.5 * (
+                    (this.obstacles[idx + N] ? p[idx] : p[idx + N]) -
+                    (this.obstacles[idx - N] ? p[idx] : p[idx - N])
+                ) * N;
             }
         }
         this.set_bnd(1, velocX);
@@ -158,73 +190,73 @@ class Fluid {
     }
 
     advect(b, d, d0, velocX, velocY, dt) {
-        let i0, i1, j0, j1;
+        const N = this.size;
+        const dtx = dt * (N - 2);
+        const dty = dt * (N - 2);
+        const Nfloat = N - 2;
 
-        let dtx = dt * (this.size - 2);
-        let dty = dt * (this.size - 2);
+        for (let j = 1; j < N - 1; j++) {
+            for (let i = 1; i < N - 1; i++) {
+                const idx = i + j * N;
 
-        let s0, s1, t0, t1;
-        let tmp1, tmp2, x, y;
+                if (this.obstacles[idx]) {
+                    d[idx] = 0;
+                    continue;
+                }
 
-        let Nfloat = this.size - 2;
-        let ifloat, jfloat;
-        let i, j;
+                const tmp1 = dtx * velocX[idx];
+                const tmp2 = dty * velocY[idx];
 
-        for (j = 1, jfloat = 1; j < this.size - 1; j++, jfloat++) {
-            for (i = 1, ifloat = 1; i < this.size - 1; i++, ifloat++) {
-                tmp1 = dtx * velocX[i + j * this.size];
-                tmp2 = dty * velocY[i + j * this.size];
-                x = ifloat - tmp1;
-                y = jfloat - tmp2;
+                let x = i - tmp1;
+                let y = j - tmp2;
 
                 if (x < 0.5) x = 0.5;
                 if (x > Nfloat + 0.5) x = Nfloat + 0.5;
-                i0 = Math.floor(x);
-                i1 = i0 + 1.0;
+                const i0 = Math.floor(x);
+                const i1 = i0 + 1;
+
                 if (y < 0.5) y = 0.5;
                 if (y > Nfloat + 0.5) y = Nfloat + 0.5;
-                j0 = Math.floor(y);
-                j1 = j0 + 1.0;
+                const j0 = Math.floor(y);
+                const j1 = j0 + 1;
 
-                s1 = x - i0;
-                s0 = 1.0 - s1;
-                t1 = y - j0;
-                t0 = 1.0 - t1;
+                const s1 = x - i0;
+                const s0 = 1.0 - s1;
+                const t1 = y - j0;
+                const t0 = 1.0 - t1;
 
-                let i0i = Math.floor(i0);
-                let i1i = i0i + 1;
-                let j0i = Math.floor(j0);
-                let j1i = j0i + 1;
+                const idx00 = i0 + j0 * N;
+                const idx01 = i0 + j1 * N;
+                const idx10 = i1 + j0 * N;
+                const idx11 = i1 + j1 * N;
 
-                d[i + j * this.size] =
-                    s0 * (t0 * d0[i0i + j0i * this.size] + t1 * d0[i0i + j1i * this.size]) +
-                    s1 * (t0 * d0[i1i + j0i * this.size] + t1 * d0[i1i + j1i * this.size]);
+                let val00 = d0[idx00];
+                let val01 = d0[idx01];
+                let val10 = d0[idx10];
+                let val11 = d0[idx11];
+
+                d[idx] = s0 * (t0 * val00 + t1 * val01) + s1 * (t0 * val10 + t1 * val11);
             }
         }
         this.set_bnd(b, d);
     }
 
     set_bnd(b, x) {
-        for (let i = 1; i < this.size - 1; i++) {
-            x[i + 0 * this.size] = b == 2 ? -x[i + 1 * this.size] : x[i + 1 * this.size];
-            x[i + (this.size - 1) * this.size] =
-                b == 2 ? -x[i + (this.size - 2) * this.size] : x[i + (this.size - 2) * this.size];
+        const N = this.size;
+
+        for (let i = 1; i < N - 1; i++) {
+            x[i] = b === 2 ? -x[i + N] : x[i + N];
+            x[i + (N - 1) * N] = b === 2 ? -x[i + (N - 2) * N] : x[i + (N - 2) * N];
         }
-        for (let j = 1; j < this.size - 1; j++) {
-            x[0 + j * this.size] = b == 1 ? -x[1 + j * this.size] : x[1 + j * this.size];
-            x[(this.size - 1) + j * this.size] =
-                b == 1 ? -x[(this.size - 2) + j * this.size] : x[(this.size - 2) + j * this.size];
+        for (let j = 1; j < N - 1; j++) {
+            x[j * N] = b === 1 ? -x[1 + j * N] : x[1 + j * N];
+            x[(N - 1) + j * N] = b === 1 ? -x[(N - 2) + j * N] : x[(N - 2) + j * N];
         }
 
-        x[0 + 0 * this.size] = 0.33 * (x[1 + 0 * this.size] + x[0 + 1 * this.size]);
-        x[0 + (this.size - 1) * this.size] =
-            0.33 * (x[1 + (this.size - 1) * this.size] + x[0 + (this.size - 2) * this.size]);
-        x[(this.size - 1) + 0 * this.size] =
-            0.33 * (x[(this.size - 2) + 0 * this.size] + x[(this.size - 1) + 1 * this.size]);
-        x[(this.size - 1) + (this.size - 1) * this.size] =
-            0.33 *
-            (x[(this.size - 2) + (this.size - 1) * this.size] +
-                x[(this.size - 1) + (this.size - 2) * this.size]);
+        x[0] = 0.33 * (x[1] + x[N]);
+        x[(N - 1) * N] = 0.33 * (x[1 + (N - 1) * N] + x[(N - 2) * N]);
+        x[N - 1] = 0.33 * (x[N - 2] + x[2 * N - 1]);
+        x[N * N - 1] = 0.33 * (x[(N - 2) * N + N - 1] + x[(N - 1) * N + N - 2]);
     }
 }
 

@@ -4,66 +4,116 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fluid Simulator: JS vs Rust</title>
+    <title>Fluid Simulator: JavaScript vs WebAssembly</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;400;600&display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@300;400;600&display=swap"
         rel="stylesheet">
 </head>
 
 <body>
     <div id="app">
-        <canvas id="fluid-canvas"></canvas>
+        <header>
+            <h1>FLUID SIMULATOR</h1>
+            <div class="engine-toggle">
+                <button id="btn-mode-dual" class="active">Dual View</button>
+                <button id="btn-mode-js">JS Only</button>
+                <button id="btn-mode-wasm">Wasm Only</button>
+            </div>
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="label">Resolution:</span>
+                    <span id="current-resolution" class="value">256</span>
+                </div>
+            </div>
+        </header>
 
-        <div id="ui-overlay">
-            <header>
-                <h1>FLUID SIMULATOR</h1>
-                <div class="stats">
-                    <div class="stat-item">
-                        <span class="label">FPS:</span>
-                        <span id="fps-counter" class="value">0</span>
+        <main>
+            <section class="dual-canvas-container">
+                <div class="canvas-panel js" id="panel-js">
+                    <div class="panel-header">
+                        <span class="engine-label">JavaScript</span>
+                        <span class="engine-status" id="status-js">Active</span>
+                    </div>
+                    <canvas id="canvas-js"></canvas>
+                    <div class="fps-overlay" id="fps-js">
+                        <span class="fps-value">0</span>
+                        <span class="fps-unit">FPS</span>
                     </div>
                 </div>
-            </header>
 
-            <main>
-                <div class="control-panel">
-                    <section class="engine-selection">
-                        <h2>COMPUTE ENGINE</h2>
-                        <div class="button-group">
-                            <button id="btn-js" class="active">JavaScript</button>
-                            <button id="btn-rust" disabled title="Phase 2 Implementation">Rust (Wasm)</button>
-                        </div>
-                    </section>
-
-                    <section class="brush-selection">
-                        <h2>BRUSH MODE</h2>
-                        <div class="button-group">
-                            <button id="btn-mode-water" class="active">Water</button>
-                            <button id="btn-mode-stone">Stone</button>
-                        </div>
-                    </section>
-
-                    <section class="simulation-params">
-                        <h2>PARAMETERS</h2>
-                        <div class="control-item">
-                            <label for="range-resolution">Resolution</label>
-                            <input type="range" id="range-resolution" min="64" max="256" step="64" value="128">
-                            <span id="val-resolution" class="val-display">128</span>
-                        </div>
-                        <div class="button-group" style="margin-top: 1rem;">
-                            <button id="btn-clear-fluid">Clear Fluid</button>
-                            <button id="btn-clear-obstacles">Clear Stones</button>
-                        </div>
-                    </section>
+                <div class="canvas-panel wasm" id="panel-wasm">
+                    <div class="panel-header">
+                        <span class="engine-label">WebAssembly</span>
+                        <span class="engine-status" id="status-wasm">Loading...</span>
+                    </div>
+                    <canvas id="canvas-wasm"></canvas>
+                    <div class="fps-overlay" id="fps-wasm">
+                        <span class="fps-value">0</span>
+                        <span class="fps-unit">FPS</span>
+                    </div>
                 </div>
-            </main>
+            </section>
 
-            <footer>
-                <p>Drag to stir • Click to toggle obstacle</p>
-            </footer>
-        </div>
+            <section class="controls">
+                <div class="control-group">
+                    <h3>PARAMETERS</h3>
+                    <div class="control-item">
+                        <label for="range-resolution">Resolution</label>
+                        <input type="range" id="range-resolution" min="64" max="640" step="64" value="256">
+                        <span id="val-resolution" class="val-display">256</span>
+                    </div>
+                    <div class="control-item">
+                        <label for="range-obstacles">Obstacles</label>
+                        <input type="range" id="range-obstacles" min="0" max="100" value="0">
+                        <span id="val-obstacles" class="val-display">0</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>BRUSH MODE</h3>
+                    <div class="button-group">
+                        <button id="btn-mode-water" class="active">Water</button>
+                        <button id="btn-mode-stone">Stone</button>
+                    </div>
+                    <div class="control-item" id="water-amount-control">
+                        <label for="range-water-amount">Water Amount</label>
+                        <input type="range" id="range-water-amount" min="50" max="1000" step="50" value="300">
+                        <span id="val-water-amount" class="val-display">300</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>ACTIONS</h3>
+                    <div class="button-group">
+                        <button id="btn-generate-obstacles">Random Stones</button>
+                        <button id="btn-clear-fluid">Clear Fluid</button>
+                        <button id="btn-clear-obstacles">Clear Stones</button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <h3>BENCHMARK</h3>
+                    <button id="btn-run-benchmark" class="benchmark-btn">Run Benchmark</button>
+                </div>
+            </section>
+
+            <section class="benchmark-results" id="benchmark-section">
+                <h3>BENCHMARK RESULTS</h3>
+                <div class="benchmark-graph">
+                    <canvas id="graph-canvas"></canvas>
+                </div>
+                <div class="benchmark-legend">
+                    <span class="legend-item js"><span class="dot"></span> JavaScript</span>
+                    <span class="legend-item wasm"><span class="dot"></span> WebAssembly</span>
+                </div>
+                <button id="btn-export-benchmark">Export Results as PNG</button>
+            </section>
+        </main>
+
+        <footer>
+            <p>Drag to stir | Click to toggle obstacle | Compare performance between JS and Wasm</p>
+        </footer>
     </div>
     <script type="module" src="/src/main.js"></script>
 </body>
