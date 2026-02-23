@@ -18,6 +18,7 @@ class Fluid {
         this.Vy0 = new Float32Array(size * size);
 
         this.obstacles = new Uint8Array(size * size);
+        this.sources = new Uint8Array(size * size);
     }
 
     step() {
@@ -31,6 +32,7 @@ class Fluid {
         const s = this.s;
         const density = this.density;
 
+        this.applySources();
         this.addGravity();
 
         this.diffuse(1, Vx0, Vx, visc, dt);
@@ -47,6 +49,19 @@ class Fluid {
         this.advect(0, density, s, Vx, Vy, dt);
 
         this.handleObstacles();
+    }
+
+    applySources() {
+        const N = this.size;
+        const flowRate = 150;
+        const velocity = 1.5;
+
+        for (let i = 0; i < N * N; i++) {
+            if (this.sources[i] && !this.obstacles[i]) {
+                this.density[i] += flowRate;
+                this.Vy[i] += velocity;
+            }
+        }
     }
 
     addGravity() {
@@ -78,7 +93,6 @@ class Fluid {
 
                 const hasLeft = this.obstacles[idx - 1];
                 const hasRight = this.obstacles[idx + 1];
-                const hasUp = this.obstacles[idx - N];
                 const hasDown = this.obstacles[idx + N];
 
                 if (hasDown && this.Vy[idx] > 0) {
@@ -99,6 +113,15 @@ class Fluid {
     setObstacle(x, y, active) {
         if (x < 1 || x >= this.size - 1 || y < 1 || y >= this.size - 1) return;
         this.obstacles[x + y * this.size] = active ? 1 : 0;
+    }
+
+    setSource(x, y, active) {
+        if (x < 1 || x >= this.size - 1 || y < 1 || y >= this.size - 1) return;
+        const idx = x + y * this.size;
+        this.sources[idx] = active ? 1 : 0;
+        if (active) {
+            this.obstacles[idx] = 0;
+        }
     }
 
     addDensity(x, y, amount) {

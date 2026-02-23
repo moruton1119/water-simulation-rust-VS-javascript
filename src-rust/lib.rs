@@ -6,12 +6,14 @@ pub struct Fluid {
     dt: f32,
     diff: f32,
     visc: f32,
-    density: Vec<f32>,
     s: Vec<f32>,
+    density: Vec<f32>,
     vx: Vec<f32>,
     vy: Vec<f32>,
     vx0: Vec<f32>,
     vy0: Vec<f32>,
+    obstacles: Vec<u8>,
+    sources: Vec<u8>,
 }
 
 #[wasm_bindgen]
@@ -23,47 +25,77 @@ impl Fluid {
             dt,
             diff: diffusion,
             visc: viscosity,
-            density: vec![0.0; n],
             s: vec![0.0; n],
+            density: vec![0.0; n],
             vx: vec![0.0; n],
             vy: vec![0.0; n],
             vx0: vec![0.0; n],
             vy0: vec![0.0; n],
+            obstacles: vec![0; n],
+            sources: vec![0; n],
         }
     }
 
     pub fn step(&mut self) {
-        let size = self.size;
+        self.apply_sources();
+        self.add_gravity();
+
         let visc = self.visc;
         let diff = self.diff;
         let dt = self.dt;
+        let n = self.size;
 
-        self.diffuse(1, 1, visc, dt); // vx
-        self.diffuse(2, 2, visc, dt); // vy
+        self.diffuse(1, &mut self.vx0, &self.vx, visc, dt);
+        self.diffuse(2, &mut self.vy0, &self.vy, visc, dt);
 
-        self.project(1, 2, 3, 4); // Use vx0, vy0 for scratch
+        self.project(&self.vx0.clone(), &self.vy0.clone(), &mut self.vx, &mut self.vy);
 
-        self.advect(1, 1, 3, 4, dt); // vx
-        self.advect(2, 2, 3, 4, dt); // vy
+        let vx0 = self.vx0.clone();
+        let vy0 = self.vy0.clone();
+        self.advect(1, &mut self.vx, &vx0, &vx0, &vy0, dt);
+        self.advect(2, &mut self.vy, &vy0, &vx0, &vy0, dt);
 
-        self.project(1, 2, 3, 4);
+        self.project(&self.vx.clone(), &self.vy.clone(), &mut self.vx0, &mut self.vy0);
 
-        self.diffuse(0, 5, diff, dt); // density
-        self.advect(0, 5, 1, 2, dt); // density with current vx, vy
+        let s = self.s.clone();
+        self.diffuse(0, &mut self.s, &self.density, diff, dt);
+        let s = self.s.clone();
+        self.advect(0, &mut self.density, &s, &self.vx, &self.vy, dt);
+
+        self.handle_obstacles();
     }
 
     pub fn add_density(&mut self, x: usize, y: usize, amount: f32) {
-        let index = x + y * self.size;
-        if index < self.density.len() {
-            self.density[index] += amount;
+        let idx = x + y * self.size;
+        if idx < self.density.len() && self.obstacles[idx] == 0 {
+            self.density[idx] += amount;
         }
     }
 
     pub fn add_velocity(&mut self, x: usize, y: usize, amount_x: f32, amount_y: f32) {
-        let index = x + y * self.size;
-        if index < self.vx.len() {
-            self.vx[index] += amount_x;
-            self.vy[index] += amount_y;
+        let idx = x + y * self.size;
+        if idx < self.vx.len() && self.obstacles[idx] == 0 {
+            self.vx[idx] += amount_x;
+            self.vy[idx] += amount_y;
+        }
+    }
+
+    pub fn set_obstacle(&mut self, x: usize, y: usize, active: bool) {
+        if x < 1 || x >= self.size - 1 || y < 1 || y >= self.size - 1 {
+            return;
+        }
+        let idx = x + y * self.size;
+        self.obstacles[idx] = if active { 1 } else { 0 };
+    }
+
+    pub fn set_source(&mut self, x: usize, y: usize, active: bool) {
+        if x < 1 || x >= self.size - 1 || y < 1 || y >= self.size - 1 {
+            return;
+        }
+        let idx = x + y * self.size;
+        self.sources[idx] = if active { 1 } else { 0 };
+        if active {
+            self.obstacles[idx] = 0;
         }
     }
 
@@ -71,146 +103,235 @@ impl Fluid {
         self.density.as_ptr()
     }
 
-    // Indices for internal buffers:
-    // 1: vx, 2: vy, 3: vx0, 4: vy0, 5: density, 6: s
-    fn get_buffer_mut(&mut self, id: u8) -> &mut [f32] {
-        match id {
-            1 => &mut self.vx,
-            2 => &mut self.vy,
-            3 => &mut self.vx0,
-            4 => &mut self.vy0,
-            5 => &mut self.density,
-            _ => &mut self.s,
+    pub fn get_obstacles_ptr(&self) -> *const u8 {
+        self.obstacles.as_ptr()
+    }
+
+    pub fn get_sources_ptr(&self) -> *const u8 {
+        self.sources.as_ptr()
+    }
+
+    pub fn get_vx_ptr(&self) -> *const f32 {
+        self.vx.as_ptr()
+    }
+
+    pub fn get_vy_ptr(&self) -> *const f32 {
+        self.vy.as_ptr()
+    }
+
+    pub fn get_size(&self) -> usize {
+        self.size
+    }
+
+    fn apply_sources(&mut self) {
+        let n = self.size;
+        let flow_rate = 150.0;
+        let velocity = 1.5;
+
+        for i in 0..n * n {
+            if self.sources[i] != 0 && self.obstacles[i] == 0 {
+                self.density[i] += flow_rate;
+                self.vy[i] += velocity;
+            }
         }
     }
 
-    fn get_buffer(&self, id: u8) -> &[f32] {
-        match id {
-            1 => &self.vx,
-            2 => &self.vy,
-            3 => &self.vx0,
-            4 => &self.vy0,
-            5 => &self.density,
-            _ => &self.s,
+    fn add_gravity(&mut self) {
+        let n = self.size;
+        let gravity = 0.2;
+
+        for i in 0..n * n {
+            if self.obstacles[i] == 0 && self.density[i] > 0.01 {
+                self.vy[i] += gravity * self.density[i].min(1.0);
+            }
         }
     }
 
-    fn diffuse(&mut self, b: i32, x_id: u8, diff: f32, dt: f32) {
-        let a = dt * diff * (self.size as f32 - 2.0) * (self.size as f32 - 2.0);
-        self.lin_solve(b, x_id, x_id, a, 1.0 + 6.0 * a);
-    }
+    fn handle_obstacles(&mut self) {
+        let n = self.size;
 
-    fn lin_solve(&mut self, b: i32, x_id: u8, x0_id: u8, a: f32, c: f32) {
-        let c_recip = 1.0 / c;
-        let size = self.size;
-        
-        for _ in 0..20 {
-            for j in 1..size - 1 {
-                for i in 1..size - 1 {
-                    let idx = i + j * size;
-                    // Note: This is an approximation of the Gauss-Seidel method.
-                    // In a simpler Rust implementation, we avoid borrowing issues by cloning or indexing carefully.
-                    // To stay efficient, we access values directly.
-                    let val = (self.get_buffer(x0_id)[idx] +
-                        a * (self.get_buffer(x_id)[idx + 1] +
-                             self.get_buffer(x_id)[idx - 1] +
-                             self.get_buffer(x_id)[idx + size] +
-                             self.get_buffer(x_id)[idx - size])) * c_recip;
-                    self.get_buffer_mut(x_id)[idx] = val;
+        for j in 1..n - 1 {
+            for i in 1..n - 1 {
+                let idx = i + j * n;
+
+                if self.obstacles[idx] != 0 {
+                    self.density[idx] = 0.0;
+                    self.vx[idx] = 0.0;
+                    self.vy[idx] = 0.0;
+                    self.vx0[idx] = 0.0;
+                    self.vy0[idx] = 0.0;
+                    continue;
+                }
+
+                let has_left = self.obstacles[idx - 1] != 0;
+                let has_right = self.obstacles[idx + 1] != 0;
+                let has_down = self.obstacles[idx + n] != 0;
+
+                if has_down && self.vy[idx] > 0.0 {
+                    let spread = self.vy[idx] * 0.5;
+                    self.vy[idx] *= 0.1;
+
+                    if !has_left {
+                        self.vx[idx - 1] += spread * 0.5;
+                    }
+                    if !has_right {
+                        self.vx[idx + 1] -= spread * 0.5;
+                    }
                 }
             }
-            self.set_bnd(b, x_id);
         }
     }
 
-    fn project(&mut self, vx_id: u8, vy_id: u8, p_id: u8, div_id: u8) {
-        let size = self.size;
-        for j in 1..size - 1 {
-            for i in 1..size - 1 {
-                let idx = i + j * size;
-                self.get_buffer_mut(div_id)[idx] = -0.5 * (
-                    self.get_buffer(vx_id)[idx + 1] - self.get_buffer(vx_id)[idx - 1] +
-                    self.get_buffer(vy_id)[idx + size] - self.get_buffer(vy_id)[idx - size]
-                ) / size as f32;
-                self.get_buffer_mut(p_id)[idx] = 0.0;
-            }
-        }
-        self.set_bnd(0, div_id);
-        self.set_bnd(0, p_id);
-        self.lin_solve(0, p_id, div_id, 1.0, 6.0);
-
-        for j in 1..size - 1 {
-            for i in 1..size - 1 {
-                let idx = i + j * size;
-                self.get_buffer_mut(vx_id)[idx] -= 0.5 * (self.get_buffer(p_id)[idx + 1] - self.get_buffer(p_id)[idx - 1]) * size as f32;
-                self.get_buffer_mut(vy_id)[idx] -= 0.5 * (self.get_buffer(p_id)[idx + size] - self.get_buffer(p_id)[idx - size]) * size as f32;
-            }
-        }
-        self.set_bnd(1, vx_id);
-        self.set_bnd(2, vy_id);
+    fn diffuse(&mut self, b: i32, x: &mut Vec<f32>, x0: &Vec<f32>, diff: f32, dt: f32) {
+        let n = self.size;
+        let a = dt * diff * ((n - 2) as f32) * ((n - 2) as f32);
+        self.lin_solve(b, x, x0, a, 1.0 + 6.0 * a);
     }
 
-    fn advect(&mut self, b: i32, d_id: u8, vx_id: u8, vy_id: u8, dt: f32) {
-        let size = self.size;
-        let dtx = dt * (size as f32 - 2.0);
-        let dty = dt * (size as f32 - 2.0);
-        let n_float = size as f32 - 2.0;
+    fn lin_solve(&mut self, b: i32, x: &mut Vec<f32>, x0: &Vec<f32>, a: f32, c: f32) {
+        let c_recip = 1.0 / c;
+        let n = self.size;
 
-        // Clone current state for reading during advection to avoid double updates
-        let d0 = self.get_buffer(d_id).to_vec();
-        let vx = self.get_buffer(vx_id).to_vec();
-        let vy = self.get_buffer(vy_id).to_vec();
+        for _ in 0..20 {
+            for j in 1..n - 1 {
+                for i in 1..n - 1 {
+                    let idx = i + j * n;
+                    if self.obstacles[idx] != 0 {
+                        continue;
+                    }
 
-        for j in 1..size - 1 {
-            for i in 1..size - 1 {
-                let idx = i + j * size;
-                let mut x = i as f32 - dtx * vx[idx];
-                let mut y = j as f32 - dty * vy[idx];
+                    let x_left = if self.obstacles[idx - 1] != 0 { x[idx] } else { x[idx - 1] };
+                    let x_right = if self.obstacles[idx + 1] != 0 { x[idx] } else { x[idx + 1] };
+                    let x_up = if self.obstacles[idx - n] != 0 { x[idx] } else { x[idx - n] };
+                    let x_down = if self.obstacles[idx + n] != 0 { x[idx] } else { x[idx + n] };
+
+                    x[idx] = (x0[idx] + a * (x_left + x_right + x_up + x_down)) * c_recip;
+                }
+            }
+            self.set_bnd(b, x);
+        }
+    }
+
+    fn project(&mut self, veloc_x: &Vec<f32>, veloc_y: &Vec<f32>, p: &mut Vec<f32>, div: &mut Vec<f32>) {
+        let n = self.size;
+
+        for j in 1..n - 1 {
+            for i in 1..n - 1 {
+                let idx = i + j * n;
+
+                if self.obstacles[idx] != 0 {
+                    div[idx] = 0.0;
+                    p[idx] = 0.0;
+                    continue;
+                }
+
+                let vx_right = if self.obstacles[idx + 1] != 0 { veloc_x[idx] } else { veloc_x[idx + 1] };
+                let vx_left = if self.obstacles[idx - 1] != 0 { veloc_x[idx] } else { veloc_x[idx - 1] };
+                let vy_down = if self.obstacles[idx + n] != 0 { veloc_y[idx] } else { veloc_y[idx + n] };
+                let vy_up = if self.obstacles[idx - n] != 0 { veloc_y[idx] } else { veloc_y[idx - n] };
+
+                div[idx] = -0.5 * (vx_right - vx_left + vy_down - vy_up) / (n as f32);
+                p[idx] = 0.0;
+            }
+        }
+        self.set_bnd(0, div);
+        self.set_bnd(0, p);
+
+        self.lin_solve(0, p, div, 1.0, 4.0);
+
+        for j in 1..n - 1 {
+            for i in 1..n - 1 {
+                let idx = i + j * n;
+
+                if self.obstacles[idx] != 0 {
+                    continue;
+                }
+
+                let p_right = if self.obstacles[idx + 1] != 0 { p[idx] } else { p[idx + 1] };
+                let p_left = if self.obstacles[idx - 1] != 0 { p[idx] } else { p[idx - 1] };
+                let p_down = if self.obstacles[idx + n] != 0 { p[idx] } else { p[idx + n] };
+                let p_up = if self.obstacles[idx - n] != 0 { p[idx] } else { p[idx - n] };
+
+                self.vx[idx] -= 0.5 * (p_right - p_left) * (n as f32);
+                self.vy[idx] -= 0.5 * (p_down - p_up) * (n as f32);
+            }
+        }
+        self.set_bnd(1, &mut self.vx);
+        self.set_bnd(2, &mut self.vy);
+    }
+
+    fn advect(&mut self, b: i32, d: &mut Vec<f32>, d0: &Vec<f32>, veloc_x: &Vec<f32>, veloc_y: &Vec<f32>, dt: f32) {
+        let n = self.size;
+        let dtx = dt * ((n - 2) as f32);
+        let dty = dt * ((n - 2) as f32);
+        let n_float = (n - 2) as f32;
+
+        for j in 1..n - 1 {
+            for i in 1..n - 1 {
+                let idx = i + j * n;
+
+                if self.obstacles[idx] != 0 {
+                    d[idx] = 0.0;
+                    continue;
+                }
+
+                let tmp1 = dtx * veloc_x[idx];
+                let tmp2 = dty * veloc_y[idx];
+
+                let mut x = (i as f32) - tmp1;
+                let mut y = (j as f32) - tmp2;
 
                 if x < 0.5 { x = 0.5; }
                 if x > n_float + 0.5 { x = n_float + 0.5; }
-                let i0 = x.floor();
-                let i1 = i0 + 1.0;
+                let i0 = x.floor() as usize;
+                let i1 = i0 + 1;
 
                 if y < 0.5 { y = 0.5; }
                 if y > n_float + 0.5 { y = n_float + 0.5; }
-                let j0 = y.floor();
-                let j1 = j0 + 1.0;
+                let j0 = y.floor() as usize;
+                let j1 = j0 + 1;
 
-                let s1 = x - i0;
+                let s1 = x - (i0 as f32);
                 let s0 = 1.0 - s1;
-                let t1 = y - j0;
+                let t1 = y - (j0 as f32);
                 let t0 = 1.0 - t1;
 
-                let i0i = i0 as usize;
-                let i1i = i1 as usize;
-                let j0i = j0 as usize;
-                let j1i = j1 as usize;
+                let idx00 = i0 + j0 * n;
+                let idx01 = i0 + j1 * n;
+                let idx10 = i1 + j0 * n;
+                let idx11 = i1 + j1 * n;
 
-                self.get_buffer_mut(d_id)[idx] = 
-                    s0 * (t0 * d0[i0i + j0i * size] + t1 * d0[i0i + j1i * size]) +
-                    s1 * (t0 * d0[i1i + j0i * size] + t1 * d0[i1i + j1i * size]);
+                let val00 = d0[idx00];
+                let val01 = d0[idx01];
+                let val10 = d0[idx10];
+                let val11 = d0[idx11];
+
+                d[idx] = s0 * (t0 * val00 + t1 * val01) + s1 * (t0 * val10 + t1 * val11);
             }
         }
-        self.set_bnd(b, d_id);
+        self.set_bnd(b, d);
     }
 
-    fn set_bnd(&mut self, b: i32, x_id: u8) {
-        let size = self.size;
-        let x = self.get_buffer_mut(x_id);
-        
-        for i in 1..size - 1 {
-            x[i + 0 * size] = if b == 2 { -x[i + 1 * size] } else { x[i + 1 * size] };
-            x[i + (size - 1) * size] = if b == 2 { -x[i + (size - 2) * size] } else { x[i + (size - 2) * size] };
+    fn set_bnd(&mut self, b: i32, x: &mut Vec<f32>) {
+        let n = self.size;
+
+        for i in 1..n - 1 {
+            x[i] = if b == 2 { -x[i + n] } else { x[i + n] };
+            x[i + (n - 1) * n] = if b == 2 { -x[i + (n - 2) * n] } else { x[i + (n - 2) * n] };
         }
-        for j in 1..size - 1 {
-            x[0 + j * size] = if b == 1 { -x[1 + j * size] } else { x[1 + j * size] };
-            x[(size - 1) + j * size] = if b == 1 { -x[(size - 2) + j * size] } else { x[(size - 2) + j * size] };
+        for j in 1..n - 1 {
+            x[j * n] = if b == 1 { -x[1 + j * n] } else { x[1 + j * n] };
+            x[(n - 1) + j * n] = if b == 1 { -x[(n - 2) + j * n] } else { x[(n - 2) + j * n] };
         }
 
-        x[0 + 0 * size] = 0.33 * (x[1 + 0 * size] + x[0 + 1 * size]);
-        x[0 + (size - 1) * size] = 0.33 * (x[1 + (size - 1) * size] + x[0 + (size - 2) * size]);
-        x[(size - 1) + 0 * size] = 0.33 * (x[(size - 2) + 0 * size] + x[(size - 1) + 1 * size]);
-        x[(size - 1) + (size - 1) * size] = 0.33 * (x[(size - 2) + (size - 1) * size] + x[(size - 1) + (size - 2) * size]);
+        x[0] = 0.33 * (x[1] + x[n]);
+        x[(n - 1) * n] = 0.33 * (x[1 + (n - 1) * n] + x[(n - 2) * n]);
+        x[n - 1] = 0.33 * (x[n - 2] + x[2 * n - 1]);
+        x[n * n - 1] = 0.33 * (x[(n - 2) * n + n - 1] + x[(n - 1) * n + n - 2]);
     }
+}
+
+#[wasm_bindgen]
+pub fn get_memory() -> JsValue {
+    wasm_bindgen::memory()
 }

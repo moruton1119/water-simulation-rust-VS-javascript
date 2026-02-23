@@ -7,4 +7,8 @@ export default defineConfig({
   build: {
     target: 'esnext',
   },
+  optimizeDeps: {
+    exclude: ['../pkg/fluid_wasm.js'],
+  },
+  assetsInclude: ['**/*.wasm'],
 });

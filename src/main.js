@@ -7,10 +7,10 @@ class FluidSimulator {
         this.N = 256;
         this.activeMode = 'water';
         this.viewMode = 'dual';
+        this.waterAmount = 300;
 
         this.jsFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.1);
         this.wasmFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.1);
-        this.waterAmount = 300;
         this.wasmAvailable = false;
 
         this.initCanvas();
@@ -68,16 +68,18 @@ class FluidSimulator {
 
         this.statusJs.textContent = 'WebGL Active';
         this.statusJs.className = 'engine-status active';
-        this.statusWasm.textContent = 'Mock (JS)';
+        this.statusWasm.textContent = 'Loading WASM...';
         this.statusWasm.className = 'engine-status loading';
 
         this.waterAmountSlider = document.getElementById('range-water-amount');
         this.waterAmountValue = document.getElementById('val-water-amount');
 
-        this.waterAmountSlider.addEventListener('input', (e) => {
-            this.waterAmount = parseInt(e.target.value);
-            this.waterAmountValue.textContent = this.waterAmount;
-        });
+        if (this.waterAmountSlider) {
+            this.waterAmountSlider.addEventListener('input', (e) => {
+                this.waterAmount = parseInt(e.target.value);
+                this.waterAmountValue.textContent = this.waterAmount;
+            });
+        }
     }
 
     initEventListeners() {
@@ -92,18 +94,18 @@ class FluidSimulator {
     initModeButtons() {
         const btnWater = document.getElementById('btn-mode-water');
         const btnStone = document.getElementById('btn-mode-stone');
+        const btnSource = document.getElementById('btn-mode-source');
+        const buttons = [btnWater, btnStone, btnSource];
 
-        btnWater.addEventListener('click', () => {
-            this.activeMode = 'water';
-            btnWater.classList.add('active');
-            btnStone.classList.remove('active');
-        });
+        const setActive = (mode, activeBtn) => {
+            this.activeMode = mode;
+            buttons.forEach(b => b.classList.remove('active'));
+            activeBtn.classList.add('active');
+        };
 
-        btnStone.addEventListener('click', () => {
-            this.activeMode = 'stone';
-            btnStone.classList.add('active');
-            btnWater.classList.remove('active');
-        });
+        btnWater.addEventListener('click', () => setActive('water', btnWater));
+        btnStone.addEventListener('click', () => setActive('stone', btnStone));
+        btnSource.addEventListener('click', () => setActive('source', btnSource));
     }
 
     initViewModeButtons() {
@@ -203,6 +205,11 @@ class FluidSimulator {
             this.obstaclesValue.textContent = '0';
         });
 
+        document.getElementById('btn-clear-sources').addEventListener('click', () => {
+            this.jsFluid.sources.fill(0);
+            this.wasmFluid.sources.fill(0);
+        });
+
         document.getElementById('btn-run-benchmark').addEventListener('click', () => {
             this.runBenchmark();
         });
@@ -275,6 +282,11 @@ class FluidSimulator {
                         }
                     });
                 }
+                lastGridX = x;
+                lastGridY = y;
+            } else if (this.activeMode === 'source') {
+                this.jsFluid.setSource(x, y, true);
+                this.wasmFluid.setSource(x, y, true);
                 lastGridX = x;
                 lastGridY = y;
             } else {
@@ -409,7 +421,6 @@ class FluidSimulator {
                             return;
                         }
 
-                        this.injectRiverFlow(fluid);
                         fluid.step();
                         renderer.render(fluid);
                         frames++;
