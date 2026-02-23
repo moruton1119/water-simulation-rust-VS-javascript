@@ -9,8 +9,8 @@ class FluidSimulator {
         this.viewMode = 'dual';
         this.waterAmount = 300;
 
-        this.jsFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.1);
-        this.wasmFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.1);
+        this.jsFluid = new Fluid(this.N, 0, 0.00000001, 0.1);
+        this.wasmFluid = new Fluid(this.N, 0, 0.00000001, 0.1);
         this.wasmAvailable = false;
 
         this.initCanvas();
@@ -152,8 +152,8 @@ class FluidSimulator {
             this.resValue.textContent = this.N;
             this.currentRes.textContent = this.N;
 
-            this.jsFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.05);
-            this.wasmFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.05);
+            this.jsFluid = new Fluid(this.N, 0, 0.00000001, 0.05);
+            this.wasmFluid = new Fluid(this.N, 0, 0.00000001, 0.05);
         });
     }
 
@@ -403,8 +403,8 @@ class FluidSimulator {
             this.resValue.textContent = res;
             this.currentRes.textContent = res;
 
-            this.jsFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.05);
-            this.wasmFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.05);
+            this.jsFluid = new Fluid(this.N, 0, 0.00000001, 0.05);
+            this.wasmFluid = new Fluid(this.N, 0, 0.00000001, 0.05);
 
             await new Promise(resolve => setTimeout(resolve, 100));
 

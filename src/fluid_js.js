@@ -18,7 +18,6 @@ class Fluid {
         this.Vy0 = new Float32Array(size * size);
 
         this.obstacles = new Uint8Array(size * size);
-        this.sources = new Uint8Array(size * size);
     }
 
     step() {
@@ -32,7 +31,6 @@ class Fluid {
         const s = this.s;
         const density = this.density;
 
-        this.applySources();
         this.addGravity();
 
         this.diffuse(1, Vx0, Vx, visc, dt);
@@ -49,27 +47,15 @@ class Fluid {
         this.advect(0, density, s, Vx, Vy, dt);
 
         this.handleObstacles();
-    }
-
-    applySources() {
-        const N = this.size;
-        const flowRate = 150;
-        const velocity = 1.5;
-
-        for (let i = 0; i < N * N; i++) {
-            if (this.sources[i] && !this.obstacles[i]) {
-                this.density[i] += flowRate;
-                this.Vy[i] += velocity;
-            }
-        }
+        this.applyBoundaryDamping();
     }
 
     addGravity() {
         const N = this.size;
-        const gravity = 0.2;
+        const gravity = 0.15;
 
         for (let i = 0; i < N * N; i++) {
-            if (!this.obstacles[i] && this.density[i] > 0.01) {
+            if (!this.obstacles[i] && this.density[i] > 0.001) {
                 this.Vy[i] += gravity * Math.min(this.density[i], 1);
             }
         }
@@ -97,15 +83,26 @@ class Fluid {
 
                 if (hasDown && this.Vy[idx] > 0) {
                     const spread = this.Vy[idx] * 0.5;
-                    this.Vy[idx] *= 0.1;
+                    this.Vy[idx] *= 0.2;
 
-                    if (!hasLeft) {
-                        this.Vx[idx - 1] += spread * 0.5;
+                    if (!hasLeft && !this.obstacles[idx - 1 + N]) {
+                        this.Vx[idx - 1] += spread * 0.4;
                     }
-                    if (!hasRight) {
-                        this.Vx[idx + 1] -= spread * 0.5;
+                    if (!hasRight && !this.obstacles[idx + 1 + N]) {
+                        this.Vx[idx + 1] -= spread * 0.4;
                     }
                 }
+            }
+        }
+    }
+
+    applyBoundaryDamping() {
+        const N = this.size;
+
+        for (let i = 1; i < N - 1; i++) {
+            const bottomIdx = i + (N - 2) * N;
+            if (this.Vy[bottomIdx] > 0) {
+                this.Vy[bottomIdx] *= 0.5;
             }
         }
     }
@@ -113,15 +110,6 @@ class Fluid {
     setObstacle(x, y, active) {
         if (x < 1 || x >= this.size - 1 || y < 1 || y >= this.size - 1) return;
         this.obstacles[x + y * this.size] = active ? 1 : 0;
-    }
-
-    setSource(x, y, active) {
-        if (x < 1 || x >= this.size - 1 || y < 1 || y >= this.size - 1) return;
-        const idx = x + y * this.size;
-        this.sources[idx] = active ? 1 : 0;
-        if (active) {
-            this.obstacles[idx] = 0;
-        }
     }
 
     addDensity(x, y, amount) {
@@ -233,13 +221,11 @@ class Fluid {
                 let x = i - tmp1;
                 let y = j - tmp2;
 
-                if (x < 0.5) x = 0.5;
-                if (x > Nfloat + 0.5) x = Nfloat + 0.5;
+                x = Math.max(0.5, Math.min(Nfloat + 0.5, x));
+                y = Math.max(0.5, Math.min(Nfloat + 0.5, y));
+
                 const i0 = Math.floor(x);
                 const i1 = i0 + 1;
-
-                if (y < 0.5) y = 0.5;
-                if (y > Nfloat + 0.5) y = Nfloat + 0.5;
                 const j0 = Math.floor(y);
                 const j1 = j0 + 1;
 
@@ -253,10 +239,10 @@ class Fluid {
                 const idx10 = i1 + j0 * N;
                 const idx11 = i1 + j1 * N;
 
-                let val00 = d0[idx00];
-                let val01 = d0[idx01];
-                let val10 = d0[idx10];
-                let val11 = d0[idx11];
+                const val00 = d0[idx00];
+                const val01 = d0[idx01];
+                const val10 = d0[idx10];
+                const val11 = d0[idx11];
 
                 d[idx] = s0 * (t0 * val00 + t1 * val01) + s1 * (t0 * val10 + t1 * val11);
             }
@@ -267,19 +253,43 @@ class Fluid {
     set_bnd(b, x) {
         const N = this.size;
 
-        for (let i = 1; i < N - 1; i++) {
-            x[i] = b === 2 ? -x[i + N] : x[i + N];
-            x[i + (N - 1) * N] = b === 2 ? -x[i + (N - 2) * N] : x[i + (N - 2) * N];
-        }
-        for (let j = 1; j < N - 1; j++) {
-            x[j * N] = b === 1 ? -x[1 + j * N] : x[1 + j * N];
-            x[(N - 1) + j * N] = b === 1 ? -x[(N - 2) + j * N] : x[(N - 2) + j * N];
+        if (b === 0) {
+            // 密度：全境界で保持（消失しない）
+            for (let i = 1; i < N - 1; i++) {
+                x[i] = x[i + N];                        // 上端
+                x[i + (N - 1) * N] = x[i + (N - 2) * N]; // 下端
+            }
+            for (let j = 1; j < N - 1; j++) {
+                x[j * N] = x[1 + j * N];                 // 左端
+                x[(N - 1) + j * N] = x[(N - 2) + j * N]; // 右端
+            }
+        } else if (b === 1) {
+            // X速度
+            for (let i = 1; i < N - 1; i++) {
+                x[i] = x[i + N];
+                x[i + (N - 1) * N] = x[i + (N - 2) * N];
+            }
+            for (let j = 1; j < N - 1; j++) {
+                x[j * N] = -x[1 + j * N];          // 左端で反射
+                x[(N - 1) + j * N] = -x[(N - 2) + j * N]; // 右端で反射
+            }
+        } else if (b === 2) {
+            // Y速度
+            for (let i = 1; i < N - 1; i++) {
+                x[i] = -x[i + N];                    // 上端で反射
+                x[i + (N - 1) * N] = x[i + (N - 2) * N]; // 下端は保持
+            }
+            for (let j = 1; j < N - 1; j++) {
+                x[j * N] = x[1 + j * N];
+                x[(N - 1) + j * N] = x[(N - 2) + j * N];
+            }
         }
 
-        x[0] = 0.33 * (x[1] + x[N]);
-        x[(N - 1) * N] = 0.33 * (x[1 + (N - 1) * N] + x[(N - 2) * N]);
-        x[N - 1] = 0.33 * (x[N - 2] + x[2 * N - 1]);
-        x[N * N - 1] = 0.33 * (x[(N - 2) * N + N - 1] + x[(N - 1) * N + N - 2]);
+        // 角
+        x[0] = 0.5 * (x[1] + x[N]);
+        x[(N - 1) * N] = 0.5 * (x[1 + (N - 1) * N] + x[(N - 2) * N]);
+        x[N - 1] = 0.5 * (x[N - 2] + x[2 * N - 1]);
+        x[N * N - 1] = 0.5 * (x[(N - 2) * N + N - 1] + x[(N - 1) * N + N - 2]);
     }
 }
 
