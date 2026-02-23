@@ -47,7 +47,6 @@ class Fluid {
         this.advect(0, density, s, Vx, Vy, dt);
 
         this.handleObstacles();
-        this.applyBoundaryDamping();
     }
 
     addGravity() {
@@ -77,32 +76,19 @@ class Fluid {
                     continue;
                 }
 
-                const hasLeft = this.obstacles[idx - 1];
-                const hasRight = this.obstacles[idx + 1];
                 const hasDown = this.obstacles[idx + N];
 
                 if (hasDown && this.Vy[idx] > 0) {
                     const spread = this.Vy[idx] * 0.5;
-                    this.Vy[idx] *= 0.2;
+                    this.Vy[idx] *= 0.3;
 
-                    if (!hasLeft && !this.obstacles[idx - 1 + N]) {
-                        this.Vx[idx - 1] += spread * 0.4;
+                    if (!this.obstacles[idx - 1]) {
+                        this.Vx[idx - 1] += spread * 0.3;
                     }
-                    if (!hasRight && !this.obstacles[idx + 1 + N]) {
-                        this.Vx[idx + 1] -= spread * 0.4;
+                    if (!this.obstacles[idx + 1]) {
+                        this.Vx[idx + 1] -= spread * 0.3;
                     }
                 }
-            }
-        }
-    }
-
-    applyBoundaryDamping() {
-        const N = this.size;
-
-        for (let i = 1; i < N - 1; i++) {
-            const bottomIdx = i + (N - 2) * N;
-            if (this.Vy[bottomIdx] > 0) {
-                this.Vy[bottomIdx] *= 0.5;
             }
         }
     }
@@ -253,43 +239,19 @@ class Fluid {
     set_bnd(b, x) {
         const N = this.size;
 
-        if (b === 0) {
-            // 密度：全境界で保持（消失しない）
-            for (let i = 1; i < N - 1; i++) {
-                x[i] = x[i + N];                        // 上端
-                x[i + (N - 1) * N] = x[i + (N - 2) * N]; // 下端
-            }
-            for (let j = 1; j < N - 1; j++) {
-                x[j * N] = x[1 + j * N];                 // 左端
-                x[(N - 1) + j * N] = x[(N - 2) + j * N]; // 右端
-            }
-        } else if (b === 1) {
-            // X速度
-            for (let i = 1; i < N - 1; i++) {
-                x[i] = x[i + N];
-                x[i + (N - 1) * N] = x[i + (N - 2) * N];
-            }
-            for (let j = 1; j < N - 1; j++) {
-                x[j * N] = -x[1 + j * N];          // 左端で反射
-                x[(N - 1) + j * N] = -x[(N - 2) + j * N]; // 右端で反射
-            }
-        } else if (b === 2) {
-            // Y速度
-            for (let i = 1; i < N - 1; i++) {
-                x[i] = -x[i + N];                    // 上端で反射
-                x[i + (N - 1) * N] = x[i + (N - 2) * N]; // 下端は保持
-            }
-            for (let j = 1; j < N - 1; j++) {
-                x[j * N] = x[1 + j * N];
-                x[(N - 1) + j * N] = x[(N - 2) + j * N];
-            }
+        for (let i = 1; i < N - 1; i++) {
+            x[i] = b === 2 ? -x[i + N] : x[i + N];
+            x[i + (N - 1) * N] = b === 2 ? -x[i + (N - 2) * N] : x[i + (N - 2) * N];
+        }
+        for (let j = 1; j < N - 1; j++) {
+            x[j * N] = b === 1 ? -x[1 + j * N] : x[1 + j * N];
+            x[(N - 1) + j * N] = b === 1 ? -x[(N - 2) + j * N] : x[(N - 2) + j * N];
         }
 
-        // 角
-        x[0] = 0.5 * (x[1] + x[N]);
-        x[(N - 1) * N] = 0.5 * (x[1 + (N - 1) * N] + x[(N - 2) * N]);
-        x[N - 1] = 0.5 * (x[N - 2] + x[2 * N - 1]);
-        x[N * N - 1] = 0.5 * (x[(N - 2) * N + N - 1] + x[(N - 1) * N + N - 2]);
+        x[0] = 0.33 * (x[1] + x[N]);
+        x[(N - 1) * N] = 0.33 * (x[1 + (N - 1) * N] + x[(N - 2) * N]);
+        x[N - 1] = 0.33 * (x[N - 2] + x[2 * N - 1]);
+        x[N * N - 1] = 0.33 * (x[(N - 2) * N + N - 1] + x[(N - 1) * N + N - 2]);
     }
 }
 

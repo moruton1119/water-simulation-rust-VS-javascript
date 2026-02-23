@@ -9,8 +9,8 @@ class FluidSimulator {
         this.viewMode = 'dual';
         this.waterAmount = 300;
 
-        this.jsFluid = new Fluid(this.N, 0, 0.00000001, 0.1);
-        this.wasmFluid = new Fluid(this.N, 0, 0.00000001, 0.1);
+        this.jsFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.1);
+        this.wasmFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.1);
         this.wasmAvailable = false;
 
         this.initCanvas();
@@ -47,12 +47,8 @@ class FluidSimulator {
         this.jsRenderer = new WebGLRenderer(this.jsCanvas);
         this.wasmRenderer = new WebGLRenderer(this.wasmCanvas);
 
-        if (this.jsRenderer.gl) {
-            this.jsRenderer.resize(this.jsCanvas.width, this.jsCanvas.height);
-        }
-        if (this.wasmRenderer.gl) {
-            this.wasmRenderer.resize(this.wasmCanvas.width, this.wasmCanvas.height);
-        }
+        this.jsRenderer.resize(this.jsCanvas.width, this.jsCanvas.height);
+        this.wasmRenderer.resize(this.wasmCanvas.width, this.wasmCanvas.height);
     }
 
     initControls() {
@@ -66,9 +62,9 @@ class FluidSimulator {
         this.statusJs = document.getElementById('status-js');
         this.statusWasm = document.getElementById('status-wasm');
 
-        this.statusJs.textContent = 'WebGL Active';
+        this.statusJs.textContent = 'Active';
         this.statusJs.className = 'engine-status active';
-        this.statusWasm.textContent = 'Loading WASM...';
+        this.statusWasm.textContent = 'Mock (JS)';
         this.statusWasm.className = 'engine-status loading';
 
         this.waterAmountSlider = document.getElementById('range-water-amount');
@@ -152,8 +148,8 @@ class FluidSimulator {
             this.resValue.textContent = this.N;
             this.currentRes.textContent = this.N;
 
-            this.jsFluid = new Fluid(this.N, 0, 0.00000001, 0.05);
-            this.wasmFluid = new Fluid(this.N, 0, 0.00000001, 0.05);
+            this.jsFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.1);
+            this.wasmFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.1);
         });
     }
 
@@ -403,8 +399,8 @@ class FluidSimulator {
             this.resValue.textContent = res;
             this.currentRes.textContent = res;
 
-            this.jsFluid = new Fluid(this.N, 0, 0.00000001, 0.05);
-            this.wasmFluid = new Fluid(this.N, 0, 0.00000001, 0.05);
+            this.jsFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.1);
+            this.wasmFluid = new Fluid(this.N, 0.0000001, 0.00000001, 0.1);
 
             await new Promise(resolve => setTimeout(resolve, 100));
 

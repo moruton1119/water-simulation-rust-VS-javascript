@@ -2,11 +2,6 @@ export class WebGLRenderer {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
-        this.wasmMemory = null;
-    }
-
-    setWasmMemory(memory) {
-        this.wasmMemory = memory;
     }
 
     resize(width, height) {
@@ -16,32 +11,13 @@ export class WebGLRenderer {
 
     render(fluid) {
         const ctx = this.ctx;
-        const isWasm = typeof fluid.get_size === 'function';
-        const size = isWasm ? fluid.get_size() : fluid.size;
+        const size = fluid.size;
         const canvas = this.canvas;
 
-        let density, obstacles, sources, vx, vy;
-
-        if (isWasm && this.wasmMemory) {
-            const densityPtr = fluid.get_density_ptr();
-            const obstaclesPtr = fluid.get_obstacles_ptr();
-            const sourcesPtr = fluid.get_sources_ptr();
-            const vxPtr = fluid.get_vx_ptr();
-            const vyPtr = fluid.get_vy_ptr();
-            density = new Float32Array(this.wasmMemory.buffer, densityPtr, size * size);
-            obstacles = new Uint8Array(this.wasmMemory.buffer, obstaclesPtr, size * size);
-            sources = new Uint8Array(this.wasmMemory.buffer, sourcesPtr, size * size);
-            vx = new Float32Array(this.wasmMemory.buffer, vxPtr, size * size);
-            vy = new Float32Array(this.wasmMemory.buffer, vyPtr, size * size);
-        } else if (isWasm) {
-            return;
-        } else {
-            density = fluid.density;
-            obstacles = fluid.obstacles;
-            sources = fluid.sources;
-            vx = fluid.Vx;
-            vy = fluid.Vy;
-        }
+        const density = fluid.density;
+        const obstacles = fluid.obstacles;
+        const vx = fluid.Vx;
+        const vy = fluid.Vy;
 
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = size;
@@ -55,12 +31,7 @@ export class WebGLRenderer {
                 const idx = (i + j * size) * 4;
                 const fluidIdx = i + j * size;
 
-                if (sources[fluidIdx]) {
-                    data[idx] = 0;
-                    data[idx + 1] = 255;
-                    data[idx + 2] = 200;
-                    data[idx + 3] = 255;
-                } else if (obstacles[fluidIdx]) {
+                if (obstacles[fluidIdx]) {
                     data[idx] = 80;
                     data[idx + 1] = 85;
                     data[idx + 2] = 90;
